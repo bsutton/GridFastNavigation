@@ -36,6 +36,7 @@ public class EditorStateManager {
 
 	private String oldContent;
 	private String newContent;
+	private boolean deletePressed = false;
 	
 	//
     // Editor listener callback interface
@@ -82,21 +83,25 @@ public class EditorStateManager {
             int key = event.getDomEvent().getKeyCode();
             boolean shift = event.getDomEvent().getShiftKey();
             boolean open = false;
+            deletePressed = false;
             
-            if (isOpenEvent(event) || isClickEvent(event)) {
+            if (isOpenEvent(event) || (openEditorWithSingleClick && isClickEvent(event))) {
                 open = true;
-            } else if(isKeyPressEvent(event)) {
-                if(openShortcuts.contains(key)) {
+            } else if (isKeyPressEvent(event)) {
+                if (openShortcuts.contains(key)) {
                     open = true;
-                } else if(openEditorOnType) {
-                    if(Keys.isAlphaNumericKey(key)) {
+                } else if (openEditorOnType) {
+                    if (Keys.isAlphaNumericKey(key)) {
                         open = true;
                         queueKey(key, shift);
+                    } else if (Keys.isDelKey(key)) {
+                    	open = true;
+                    	deletePressed = true;
                     }
                 }
             }
             
-            if(open) {
+            if (open) {
                 final EventCellReference<?> cell = event.getCell();
                 event.getDomEvent().preventDefault();
                 openEditor(cell.getRowIndex(), cell.getColumnIndexDOM()); // TODO: IndexDOM or Index?
@@ -324,6 +329,7 @@ public class EditorStateManager {
     private boolean useExternalLocking = false;
     
     private boolean openEditorOnType = true;
+    private boolean openEditorWithSingleClick = true;
     private boolean allowTabRowChange = true;
     private boolean allowArrowRowChange = true;
     private boolean selectTextOnFocus = true;
@@ -419,7 +425,7 @@ public class EditorStateManager {
                 unlock();
                 
                 // Reset all editor widgets to enabled
-                for(int i = 0, l = grid.getVisibleColumns().size(); i < l; ++i) {
+                for (int i = 0, l = grid.getVisibleColumns().size(); i < l; ++i) {
                     EditorWidgets.enable(getEditorWidgetForColumn(i));
                 }
                 
@@ -432,12 +438,12 @@ public class EditorStateManager {
 
                 // Check required to avoid overwriting disabled editors
                 int currentCol = getFocusedCol();
-                if(!disabledColumns.contains(currentCol)) {
-                
+                if (!disabledColumns.contains(currentCol)) {
+                	saveOldContent();
                     // Handle possible value reset of editor widget
                     String buf = flushKeys();
-                    if(!buf.trim().isEmpty()) {
-                        if(selectTextOnFocus) {
+                    if(!buf.trim().isEmpty() && !deletePressed) {
+                        if (selectTextOnFocus) {
                             EditorWidgets.setValue(editorWidget, buf);
                         } else {
                             EditorWidgets.setValue(editorWidget, EditorWidgets.getValue(editorWidget) + buf);
@@ -445,9 +451,13 @@ public class EditorStateManager {
                         
                     } else {
                         // Select text if desired
-                        if(selectTextOnFocus) {
+                        if (selectTextOnFocus) {
                             EditorWidgets.selectAll(editorWidget);
                         }
+                    }
+                    if (deletePressed) {
+                        EditorWidgets.setValue(editorWidget,"");
+                        deletePressed = false;
                     }
                     
                 } else {
@@ -480,8 +490,12 @@ public class EditorStateManager {
                         editorWidget = null;
                     }
                     
-                    if(selectTextOnFocus) {
+                    if (selectTextOnFocus && !deletePressed) {
                         EditorWidgets.selectAll(editorWidget);
+                    }
+                    if (deletePressed) {
+                        EditorWidgets.setValue(editorWidget,"");
+                        deletePressed = false;
                     }
                     
                 }
@@ -639,6 +653,10 @@ public class EditorStateManager {
         }
     }
 
+    public void setOpenEditorWithSingleClick(boolean enable) {
+    	openEditorWithSingleClick = enable;
+    }
+    
     // If set to true, text is selected when editor is opened
     public void setSelectTextOnFocus(boolean enable) {
         selectTextOnFocus = enable;
@@ -679,11 +697,15 @@ public class EditorStateManager {
     }
     
     public void saveOldContent() {
-        oldContent = EditorWidgets.getValue(getCurrentEditorWidget());
+    	if (isEditorOpen()) {
+    		oldContent = EditorWidgets.getValue(getCurrentEditorWidget());
+    	}
     }
 
     public void saveOldContent(int col) {
-        oldContent = EditorWidgets.getValue(getEditorWidgetForColumn(col));
+    	if (isEditorOpen()) {
+    		oldContent = EditorWidgets.getValue(getEditorWidgetForColumn(col));
+    	}
     }
 
     public String getContent() {
@@ -691,7 +713,9 @@ public class EditorStateManager {
     }
 
     public void saveContent() {
-        newContent = EditorWidgets.getValue(getCurrentEditorWidget());
+    	if (isEditorOpen()) {
+    		newContent = EditorWidgets.getValue(getCurrentEditorWidget());
+    	}
     }
     
     public String getOldContent() {
@@ -717,7 +741,6 @@ public class EditorStateManager {
             editor.editRow(row,col);
             notifyEditorOpened(row,col);
             waitForEditorOpen();
-            oldContent = EditorWidgets.getValue(getCurrentEditorWidget());
         } else {
             int oldRow = getFocusedRow();
 
